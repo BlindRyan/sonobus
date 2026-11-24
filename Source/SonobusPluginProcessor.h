@@ -835,6 +835,10 @@ public:
     bool getChatUseFixedWidthFont() const { return mChatUseFixedWidthFont; }
     void setChatFontSizeOffset(int offset) { mChatFontSizeOffset = offset;}
     int getChatFontSizeOffset() const { return mChatFontSizeOffset; }
+
+    // screen reader announcements of incoming chat messages
+    void setChatAnnounceMessages(bool flag) { mChatAnnounceMessages = flag; }
+    bool getChatAnnounceMessages() const { return mChatAnnounceMessages; }
     Array<SBChatEvent, CriticalSection> & getAllChatEvents() { return mAllChatEvents; }
 
     // soundboard
@@ -1086,6 +1090,7 @@ private:
     bool mLastChatShown = false;
     bool mChatUseFixedWidthFont = false;
     int mChatFontSizeOffset = 0;
+    bool mChatAnnounceMessages = true;
     // chat message storage, thread-safe
     SBChatEventList mAllChatEvents;
 

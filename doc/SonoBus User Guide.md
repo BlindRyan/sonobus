@@ -266,7 +266,19 @@ Focus Chat Messages = Control-Y
 Hide Chat         = Control-Shift-Y
 Focus Chat Input  = Control-Alt-Y
 Clear All Chat Messages = Control-Shift-K
+Read Recent Chat Message = Alt-1 (newest) through Alt-9
+Toggle Chat Announcements = Control-Shift-A
 Toggle Full Detail View = Control-I
+
+Chat with a screen reader (JAWS, NVDA, Narrator, VoiceOver):
+  New chat messages are spoken automatically without moving focus, so you can
+  keep typing. On Windows they go straight to JAWS if it is running, otherwise
+  to the screen reader through a UI Automation notification. Turn this off or on
+  with Control-Shift-A, or from the chat menu.
+  Control-Y moves to the chat message list, one message per line. Use the arrow
+  keys, Home and End to read messages. Enter opens a link in the selected message,
+  Control-C copies it, and Escape returns to the message input.
+  Alt-1 reads the newest message, Alt-2 the one before it, and so on up to Alt-9.
 
 Show Main Menus (on Windows or Linux standalone):
   File Menu      = Alt-F

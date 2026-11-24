@@ -6,6 +6,7 @@
 #include "ChatView.h"
 #include "GenericItemChooser.h"
 #include "SonoLookAndFeel.h"
+#include "ScreenReaderAnnouncer.h"
 
 void FocusTextEditor::focusGained (FocusChangeType gtype)
 {
@@ -14,6 +15,20 @@ void FocusTextEditor::focusGained (FocusChangeType gtype)
     if (onFocusGained != nullptr) {
         onFocusGained(gtype);
     }
+}
+
+bool FocusTextEditor::keyPressed (const KeyPress & key)
+{
+#if !JUCE_MAC
+    // Let Alt shortcuts (e.g. Alt-1..9 to read recent chat messages) reach the
+    // app's commands instead of typing the character. Ctrl+Alt is AltGr on many
+    // keyboard layouts and is still used for typing, so leave that alone.
+    auto mods = key.getModifiers();
+    if (mods.isAltDown() && !mods.isCtrlDown() && !mods.isCommandDown()) {
+        return false;
+    }
+#endif
+    return TextEditor::keyPressed(key);
 }
 
 class SonobusChatTabbedButtonBar : public TabbedButtonBar
@@ -38,6 +53,122 @@ protected:
 
 };
 
+
+//==============================================================================
+// AccessibleChatList
+
+AccessibleChatList::AccessibleChatList(ChatView & owner_, std::vector<AccessibleChatEntry> & entries_)
+: ListBox("chatmessages", nullptr), owner(owner_), entries(entries_)
+{
+    setModel(this);
+    setTitle(TRANS("Chat Messages"));
+    setDescription(TRANS("Use up and down arrows to read messages. Enter opens a link. Control C copies the message. Escape goes to the message input."));
+    setRowHeight(20);
+    setOutlineThickness(0);
+    setColour(ListBox::backgroundColourId, Colours::transparentBlack);
+    setColour(ListBox::outlineColourId, Colours::transparentBlack);
+    setOpaque(false);
+    getViewport()->setScrollBarsShown(false, false);
+    setMultipleSelectionEnabled(false);
+    setWantsKeyboardFocus(true);
+    // mouse users interact with the visual transcript underneath
+    setInterceptsMouseClicks(false, false);
+}
+
+int AccessibleChatList::getNumRows()
+{
+    return (int) entries.size();
+}
+
+String AccessibleChatList::getNameForRow (int rowNumber)
+{
+    if (rowNumber >= 0 && rowNumber < (int) entries.size()) {
+        return entries[(size_t) rowNumber].text;
+    }
+    return {};
+}
+
+void AccessibleChatList::selectedRowsChanged (int lastRowSelected)
+{
+    // only speak when the user is moving through the list themselves
+    if (hasKeyboardFocus(true) && lastRowSelected >= 0) {
+        ScreenReaderAnnouncer::announceSelectedItem(getNameForRow(lastRowSelected));
+    }
+}
+
+void AccessibleChatList::returnKeyPressed (int lastRowSelected)
+{
+    if (lastRowSelected >= 0 && lastRowSelected < (int) entries.size()) {
+        auto & url = entries[(size_t) lastRowSelected].url;
+        if (url.isNotEmpty()) {
+            URL(url).launchInDefaultBrowser();
+            owner.announce(TRANS("Opening link"), true);
+        }
+        else {
+            owner.announce(TRANS("No link in this message"), true);
+        }
+    }
+}
+
+bool AccessibleChatList::keyPressed (const KeyPress & key)
+{
+    if (key == KeyPress('c', ModifierKeys::commandModifier, 0)) {
+        int row = getSelectedRow();
+        if (row >= 0 && row < (int) entries.size()) {
+            SystemClipboard::copyTextToClipboard(entries[(size_t) row].text);
+            owner.announce(TRANS("Copied"), true);
+        }
+        return true;
+    }
+    if (key.isKeyCode(KeyPress::escapeKey)) {
+        owner.setFocusToChat();
+        return true;
+    }
+    return ListBox::keyPressed(key);
+}
+
+void AccessibleChatList::paintOverChildren (Graphics& g)
+{
+    // show sighted keyboard users that the message area has focus
+    if (hasKeyboardFocus(true)) {
+        g.setColour(Colour::fromFloatRGBA(0.5, 0.9, 1.0, 0.7));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 4.0f, 2.0f);
+    }
+}
+
+void AccessibleChatList::focusGained (FocusChangeType)
+{
+    if (getSelectedRow() < 0 && getNumRows() > 0) {
+        selectRow(getNumRows() - 1); // speaks via selectedRowsChanged
+    }
+    else if (getSelectedRow() >= 0) {
+        // let JAWS finish saying the list name, then read where we are
+        ScreenReaderAnnouncer::announceSelectedItem(getNameForRow(getSelectedRow()), false);
+    }
+    else if (getNumRows() == 0) {
+        owner.announce(TRANS("No chat messages"), false);
+    }
+    repaint();
+}
+
+void AccessibleChatList::entriesChanged(bool wasAtEnd)
+{
+    updateContent();
+
+    int num = getNumRows();
+    if (num == 0) {
+        deselectAllRows();
+    }
+    else if (wasAtEnd && !hasKeyboardFocus(true)) {
+        // keep the selection on the newest message while the list is not being read,
+        // so Control-Y always lands on the latest message.
+        // While the user is reading the list we leave their position alone.
+        selectRow(num - 1, true, true);
+    }
+    repaint();
+}
+
+//==============================================================================
 
 ChatView::ChatView(SonobusAudioProcessor& proc, AooServerConnectionInfo & connectinfo) : processor(proc), currConnectionInfo(connectinfo)
 {
@@ -76,6 +207,12 @@ ChatView::ChatView(SonobusAudioProcessor& proc, AooServerConnectionInfo & connec
     mChatTextEditor->setScrollToShowCursor(false);
     mChatTextEditor->addMouseListener(this, false);
     mChatTextEditor->setTitle(TRANS("Chat Text"));
+    // The visual transcript is one big text block that screen readers handle poorly.
+    // Keyboard and screen reader users get the per-message list below instead.
+    mChatTextEditor->setWantsKeyboardFocus(false);
+    mChatTextEditor->setAccessible(false);
+
+    mAccessibleList = std::make_unique<AccessibleChatList>(*this, mAccessibleEntries);
 
     mChatSendTextEditor = std::make_unique<FocusTextEditor>();
     mChatSendTextEditor->setMultiLine(true);
@@ -142,6 +279,7 @@ ChatView::ChatView(SonobusAudioProcessor& proc, AooServerConnectionInfo & connec
     
     addAndMakeVisible(mChatTabs.get());
     addAndMakeVisible(mChatTextEditor.get());
+    addAndMakeVisible(mAccessibleList.get()); // on top of the transcript, same bounds
     addAndMakeVisible(mChatSendTextEditor.get());
     addAndMakeVisible(mCloseButton.get());
     addAndMakeVisible(mTitleLabel.get());
@@ -253,6 +391,8 @@ void ChatView::resized()
     int bw = 24;
     auto edbounds = mChatSendTextEditor->getBounds();
     mSendButton->setBounds(edbounds.getRight() - bw - 2, edbounds.getBottom() - bh - 2, bw, bh);
+
+    mAccessibleList->setBounds(mChatTextEditor->getBounds());
     
 }
 
@@ -304,7 +444,74 @@ void ChatView::setFocusToChat()
 
 void ChatView::setFocusToMessageDisplay()
 {
-    mChatTextEditor->grabKeyboardFocus();
+    int num = mAccessibleList->getNumRows();
+    if (num > 0) {
+        mAccessibleList->selectRow(num - 1);
+    }
+    mAccessibleList->grabKeyboardFocus();
+}
+
+void ChatView::announce(const String & text, bool interrupt)
+{
+    ScreenReaderAnnouncer::announce(this, text, interrupt);
+}
+
+void ChatView::setAnnounceMessages(bool flag)
+{
+    processor.setChatAnnounceMessages(flag);
+}
+
+bool ChatView::getAnnounceMessages() const
+{
+    return processor.getChatAnnounceMessages();
+}
+
+String ChatView::formatTimeForSpeech() const
+{
+    return Time::getCurrentTime().toString(false, true, false);
+}
+
+void ChatView::readRecentMessage(int nth)
+{
+    int num = (int) mAccessibleEntries.size();
+    if (num == 0) {
+        announce(TRANS("No chat messages"), true);
+        return;
+    }
+    if (nth < 1 || nth > num) {
+        announce(TRANS("No message") + " " + String(nth), true);
+        return;
+    }
+    announce(mAccessibleEntries[(size_t)(num - nth)].text, true);
+}
+
+void ChatView::announceNewChatMessages(int index, int count)
+{
+    if (!processor.getChatAnnounceMessages()) return;
+
+    auto & allChatEvents = processor.getAllChatEvents();
+    auto ourName = currConnectionInfo.userName;
+
+    for (int i=index; i < index+count && i < allChatEvents.size(); ++i) {
+        auto & event = allChatEvents.getReference(i);
+
+        if (event.type == SBChatEvent::SelfType) continue;
+
+        String text;
+        if (event.type == SBChatEvent::SystemType) {
+            text = event.message;
+        }
+        else if (event.targets.isNotEmpty()) {
+            auto targetnames = StringArray::fromTokens(event.targets, "|", "");
+            if (!targetnames.contains(ourName)) continue; // not for us
+            text = TRANS("Private from") + " " + event.from + ": " + event.message;
+        }
+        else {
+            text = event.from + ": " + event.message;
+        }
+
+        announce(text, false);
+    }
 }
 
 
@@ -529,13 +736,12 @@ void ChatView::refreshMessages()
     int count = jmin(processor.getAllChatEvents().size(), jmax(0, processor.getAllChatEvents().size() - lastShownCount));
 
     if (count > 0) {
-        processNewChatMessages(processor.getAllChatEvents().size() - count, count);
-        
-        // Auto-focus on new messages for accessibility (screen reader support)
-        // Always focus the message display window when new messages arrive,
-        // even if user is typing in the input box. This ensures screen readers
-        // can announce new messages immediately.
-        setFocusToMessageDisplay();
+        int start = processor.getAllChatEvents().size() - count;
+        processNewChatMessages(start, count);
+
+        // Speak new messages through the screen reader, without moving keyboard focus,
+        // so the user can keep typing or keep reading the message list.
+        announceNewChatMessages(start, count);
     }
 }
 
@@ -547,6 +753,7 @@ void ChatView::refreshAllMessages()
     mLastChatViewStamp = 0;
 
     mChatTextEditor->clear();
+    mAccessibleEntries.clear();
     processNewChatMessages(0, processor.getAllChatEvents().size());
 }
 
@@ -572,6 +779,11 @@ void ChatView::showMenu(bool show)
         items.add(GenericItemChooserItem(TRANS("Use Fixed Width Font"), {}, nullptr, true));
     }
     items.add(GenericItemChooserItem(TRANS("Font Size..."), {}, nullptr, false));
+    if (processor.getChatAnnounceMessages()) {
+        items.add(GenericItemChooserItem(TRANS("Turn Off Screen Reader Announcements"), {}, nullptr, false));
+    } else {
+        items.add(GenericItemChooserItem(TRANS("Turn On Screen Reader Announcements"), {}, nullptr, false));
+    }
 
     Component* dw = mMenuButton->findParentComponentOfClass<AudioProcessorEditor>();
     if (!dw) dw = mMenuButton->findParentComponentOfClass<Component>();
@@ -630,6 +842,11 @@ void ChatView::showMenu(bool show)
 
             GenericItemChooser::launchPopupChooser(citems, bounds, dw, callback, selindex, dw ? dw->getHeight()-30 : 0, true);
         }
+        else if (index == 4) {
+            bool newval = !safeThis->processor.getChatAnnounceMessages();
+            safeThis->processor.setChatAnnounceMessages(newval);
+            safeThis->announce(newval ? TRANS("Chat announcements on") : TRANS("Chat announcements off"), true);
+        }
     };
 
     GenericItemChooser::launchPopupChooser(items, bounds, dw, callback, -1, dw ? dw->getHeight()-30 : 0);
@@ -638,6 +855,8 @@ void ChatView::showMenu(bool show)
 void ChatView::clearAll()
 {
     mChatTextEditor->clear();
+    mAccessibleEntries.clear();
+    mAccessibleList->entriesChanged(true);
     processor.getAllChatEvents().clearQuick();
     mLastChatMessageStamp = 0;
     mLastChatViewStamp = 0;
@@ -817,6 +1036,9 @@ void ChatView::processNewChatMessages(int index, int count)
 
     mChatTextEditor->moveCaretToEnd();
 
+    const bool listWasAtEnd = mAccessibleList->getSelectedRow() < 0
+                              || mAccessibleList->getSelectedRow() >= (int) mAccessibleEntries.size() - 1;
+
     double nowtime = Time::getMillisecondCounterHiRes() * 1e-3;
     bool gotuser = false;
     Array<Range<int> >  urlranges;
@@ -938,6 +1160,8 @@ void ChatView::processNewChatMessages(int index, int count)
             mLastChatShowTimeStamp = nowtime;
 
             mChatTextEditor->insertTextAtCaret("\n");
+
+            mAccessibleEntries.push_back({ event.message + ", " + formatTimeForSpeech(), {} });
         }
         else {
             if (event.from != mLastChatEventFrom || showtime) {
@@ -994,6 +1218,19 @@ void ChatView::processNewChatMessages(int index, int count)
             }
             mChatTextEditor->insertTextAtCaret("\n");
 
+            {
+                AccessibleChatEntry entry;
+                String who = event.type == SBChatEvent::SelfType ? TRANS("You") : event.from;
+                if (event.targets.isNotEmpty()) {
+                    who = (event.type == SBChatEvent::SelfType ? TRANS("You, private") : TRANS("Private from") + " " + event.from);
+                }
+                entry.text = who + ": " + event.message + ", " + formatTimeForSpeech();
+                if (!urlranges.isEmpty()) {
+                    entry.url = event.message.substring(urlranges.getReference(0).getStart(), urlranges.getReference(0).getEnd());
+                }
+                mAccessibleEntries.push_back(entry);
+            }
+
             mLastChatEventFrom = event.from;
             mLastChatUserMessageStamp = nowtime;
         }
@@ -1003,6 +1240,8 @@ void ChatView::processNewChatMessages(int index, int count)
 
     // reset to default
     mChatTextEditor->setScrollToShowCursor(false);
+
+    mAccessibleList->entriesChanged(listWasAtEnd);
 
     if (isVisible()) {
         mLastChatViewStamp = mLastChatUserMessageStamp;
