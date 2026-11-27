@@ -1,0 +1,43 @@
+name: Attach builds to release
+
+# When a release is published on GitHub, attach the newest successful build of
+# the 1.7.6 branch to it as permanent downloads with fixed names:
+#   SonoBusMendeni-Windows.zip, SonoBusMendeni-macOS.zip, SonoBusMendeni-Linux.zip
+# Download links that always give the newest release:
+#   https://github.com/BlindRyan/sonobus/releases/latest/download/SonoBusMendeni-Windows.zip
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the newest successful build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN=$(gh run list -R "$GITHUB_REPOSITORY" --workflow build-desktop.yml --branch 1.7.6 \
+                --status success --limit 1 --json databaseId -q '.[0].databaseId')
+          echo "Using build run $RUN"
+          gh run download "$RUN" -R "$GITHUB_REPOSITORY" -D builds
+          ls -R builds | head -50
+
+      - name: Zip each platform
+        run: |
+          mkdir -p out
+          for dir in builds/*/; do
+            name=$(basename "$dir")
+            (cd "$dir" && zip -qr "$GITHUB_WORKSPACE/out/$name.zip" .)
+          done
+          ls -la out
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" out/*.zip --clobber -R "$GITHUB_REPOSITORY"
