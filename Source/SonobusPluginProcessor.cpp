@@ -113,6 +113,7 @@ static String lastSoundboardWidthKey("lastSoundboardWidth");
 static String lastSoundboardShownKey("lastSoundboardShown");
 static String chatUseFixedWidthFontKey("chatFixedWidthFont");
 static String chatFontSizeOffsetKey("chatFontSizeOffset");
+static String chatAnnounceMessagesKey("chatAnnounceMessages");
 static String linkMonitoringDelayTimesKey("linkMonDelayTimes");
 static String langOverrideCodeKey("langOverrideCode");
 static String useUnivFontKey("useUnivFont");
@@ -8635,6 +8636,7 @@ void SonobusAudioProcessor::getStateInformationWithOptions(MemoryBlock& destData
     extraTree.setProperty(lastChatWidthKey, var((int)mLastChatWidth), nullptr);
     extraTree.setProperty(lastChatShownKey, mLastChatShown, nullptr);
     extraTree.setProperty(chatFontSizeOffsetKey, var((int)mChatFontSizeOffset), nullptr);
+    extraTree.setProperty(chatAnnounceMessagesKey, var((bool)mChatAnnounceMessages), nullptr);
     extraTree.setProperty(chatUseFixedWidthFontKey, mChatUseFixedWidthFont, nullptr);
     extraTree.setProperty(lastSoundboardWidthKey, var((int)mLastSoundboardWidth), nullptr);
     extraTree.setProperty(lastSoundboardShownKey, mLastSoundboardShown, nullptr);
@@ -8823,6 +8825,7 @@ void SonobusAudioProcessor::setStateInformationWithOptions (const void* data, in
             mLangOverrideCode = extraTree.getProperty(langOverrideCodeKey, mLangOverrideCode);
             mUseUniversalFont = extraTree.getProperty(useUnivFontKey, mUseUniversalFont);
             setChatFontSizeOffset((int) extraTree.getProperty(chatFontSizeOffsetKey, (int)mChatFontSizeOffset));
+            setChatAnnounceMessages((bool) extraTree.getProperty(chatAnnounceMessagesKey, (bool)mChatAnnounceMessages));
             setChatUseFixedWidthFont(extraTree.getProperty(chatUseFixedWidthFontKey, mChatUseFixedWidthFont));;
 
             setLastPluginBounds(juce::Rectangle<int>(0, 0, extraTree.getProperty(lastWindowWidthKey, (int)mPluginWindowWidth),

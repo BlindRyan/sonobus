@@ -17,8 +17,46 @@ public:
     FocusTextEditor(const String & name = {}) : TextEditor(name) {}
 
     void focusGained (FocusChangeType) override;
+    bool keyPressed (const KeyPress & key) override;
 
     std::function<void(FocusChangeType)> onFocusGained;
+};
+
+class ChatView;
+
+// One chat message as a screen reader should read it.
+struct AccessibleChatEntry
+{
+    String text;   // full spoken text, e.g. "Alice: hello there, 5:42 PM"
+    String url;    // first URL in the message, if any (Enter opens it)
+};
+
+// A keyboard-navigable list of chat messages, one row per message, laid
+// invisibly over the visual chat transcript. Screen readers read each row as
+// it is arrowed to; sighted users keep seeing (and clicking) the transcript.
+class AccessibleChatList : public ListBox, public ListBoxModel
+{
+public:
+    AccessibleChatList(ChatView & owner, std::vector<AccessibleChatEntry> & entries);
+
+    int getNumRows() override;
+    void paintListBoxItem (int rowNumber, Graphics& g, int width, int height, bool rowIsSelected) override {}
+    String getNameForRow (int rowNumber) override;
+    void returnKeyPressed (int lastRowSelected) override;
+    void listBoxItemDoubleClicked (int row, const MouseEvent&) override { returnKeyPressed(row); }
+    void selectedRowsChanged (int lastRowSelected) override;
+
+    bool keyPressed (const KeyPress & key) override;
+    void paintOverChildren (Graphics& g) override;
+    void focusGained (FocusChangeType) override;
+    void focusLost (FocusChangeType) override { repaint(); }
+    void focusOfChildComponentChanged (FocusChangeType) override { repaint(); }
+
+    void entriesChanged(bool wasAtEnd);
+
+private:
+    ChatView & owner;
+    std::vector<AccessibleChatEntry> & entries;
 };
 
 class ChatView : public Component
@@ -55,9 +93,18 @@ public:
     void chatTabChanged (int tabindex);
     void chatTabRightClicked (int tabindex);
 
+    // screen reader support
+    // speak the Nth most recent message in the current chat tab (1 = newest)
+    void readRecentMessage(int nth);
+    void setAnnounceMessages(bool flag);
+    bool getAnnounceMessages() const;
+    void announce(const String & text, bool interrupt=false);
+
 protected:
 
     void processNewChatMessages(int index, int count);
+    void announceNewChatMessages(int index, int count);
+    String formatTimeForSpeech() const;
     void commitChatMessage();
 
     void showMenu(bool show);
@@ -110,6 +157,8 @@ protected:
     std::unique_ptr<TabbedButtonBar> mChatTabs;
     std::unique_ptr<Component> mChatContainer;
     std::unique_ptr<TextEditor> mChatTextEditor;
+    std::vector<AccessibleChatEntry> mAccessibleEntries;
+    std::unique_ptr<AccessibleChatList> mAccessibleList;
     std::unique_ptr<FocusTextEditor> mChatSendTextEditor;
     std::unique_ptr<SonoDrawableButton> mMenuButton;
     std::unique_ptr<SonoDrawableButton> mCloseButton;

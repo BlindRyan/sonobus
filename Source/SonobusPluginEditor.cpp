@@ -9492,6 +9492,35 @@ void SonobusAudioProcessorEditor::getCommandInfo (CommandID cmdID, ApplicationCo
                 info.addDefaultKeypress ('y', ModifierKeys::commandModifier | ModifierKeys::shiftModifier);
             }
             break;
+        case SonobusCommands::ToggleChatAnnouncements:
+            info.setInfo (TRANS("Toggle Chat Announcements"),
+                          TRANS("Turn screen reader announcements of new chat messages on or off"),
+                          TRANS("Popup"), 0);
+            info.setActive(true);
+            if (useKeybindings) {
+                info.addDefaultKeypress ('a', ModifierKeys::commandModifier | ModifierKeys::shiftModifier);
+            }
+            break;
+        case SonobusCommands::ReadChatMessage1:
+        case SonobusCommands::ReadChatMessage2:
+        case SonobusCommands::ReadChatMessage3:
+        case SonobusCommands::ReadChatMessage4:
+        case SonobusCommands::ReadChatMessage5:
+        case SonobusCommands::ReadChatMessage6:
+        case SonobusCommands::ReadChatMessage7:
+        case SonobusCommands::ReadChatMessage8:
+        case SonobusCommands::ReadChatMessage9:
+        {
+            int nth = (int) cmdID - (int) SonobusCommands::ReadChatMessage1 + 1;
+            info.setInfo (TRANS("Read Chat Message") + " " + String(nth),
+                          TRANS("Speak a recent chat message with the screen reader (1 is the newest)"),
+                          TRANS("Popup"), 0);
+            info.setActive(true);
+            if (useKeybindings) {
+                info.addDefaultKeypress ('0' + nth, ModifierKeys::altModifier);
+            }
+            break;
+        }
 
     }
 }
@@ -9533,6 +9562,10 @@ void SonobusAudioProcessorEditor::getAllCommands (Array<CommandID>& cmds) {
     cmds.add(SonobusCommands::FocusChatInput);
     cmds.add(SonobusCommands::ClearChatMessages);
     cmds.add(SonobusCommands::HideChatView);
+    cmds.add(SonobusCommands::ToggleChatAnnouncements);
+    for (int i = SonobusCommands::ReadChatMessage1; i <= SonobusCommands::ReadChatMessage9; ++i) {
+        cmds.add(i);
+    }
 
 }
 
@@ -9734,6 +9767,26 @@ bool SonobusAudioProcessorEditor::perform (const InvocationInfo& info) {
             if (mChatView && mChatView->isVisible()) {
                 showChatPanel(false);
                 resized();
+            }
+            break;
+        case SonobusCommands::ToggleChatAnnouncements:
+            if (mChatView) {
+                bool newval = !mChatView->getAnnounceMessages();
+                mChatView->setAnnounceMessages(newval);
+                mChatView->announce(newval ? TRANS("Chat announcements on") : TRANS("Chat announcements off"), true);
+            }
+            break;
+        case SonobusCommands::ReadChatMessage1:
+        case SonobusCommands::ReadChatMessage2:
+        case SonobusCommands::ReadChatMessage3:
+        case SonobusCommands::ReadChatMessage4:
+        case SonobusCommands::ReadChatMessage5:
+        case SonobusCommands::ReadChatMessage6:
+        case SonobusCommands::ReadChatMessage7:
+        case SonobusCommands::ReadChatMessage8:
+        case SonobusCommands::ReadChatMessage9:
+            if (mChatView) {
+                mChatView->readRecentMessage((int) info.commandID - (int) SonobusCommands::ReadChatMessage1 + 1);
             }
             break;
 

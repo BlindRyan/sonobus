@@ -44,7 +44,17 @@ public:
         RecvSyncToggle,
         FocusChatInput,
         ClearChatMessages,
-        HideChatView
+        HideChatView,
+        ToggleChatAnnouncements,
+        ReadChatMessage1,   // Alt-1 reads newest message ... Alt-9 the 9th newest
+        ReadChatMessage2,
+        ReadChatMessage3,
+        ReadChatMessage4,
+        ReadChatMessage5,
+        ReadChatMessage6,
+        ReadChatMessage7,
+        ReadChatMessage8,
+        ReadChatMessage9
     };
     
 };

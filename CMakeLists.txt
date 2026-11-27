@@ -258,6 +258,8 @@ function(sono_add_custom_plugin_target target_name product_name formats is_instr
         Source/ChannelGroupsView.cpp
         Source/ChannelGroupsView.h
         Source/ChatView.cpp
+        Source/ScreenReaderAnnouncer.cpp
+        Source/ScreenReaderWindows.cpp
         Source/ChatView.h
         Source/CompressorView.h
         Source/ConnectView.cpp
